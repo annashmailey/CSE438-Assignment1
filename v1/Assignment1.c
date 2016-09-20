@@ -152,13 +152,14 @@ void *bus_daemon(void* arg)
 	struct timespec next;
 	struct msg *fwd_msg;
 	int dest_id;
-	int loop = 0;
+	int loop;
 	
 	clock_gettime(CLOCK_MONOTONIC, &next);
 	while(!finished)
 	{
 		sem_wait(&mutex);
 		//Remove messages from bus_in_q
+		loop = 0;
 		while(loop != -1)
 		{
 			fwd_msg = sq_read(args->bus_in);

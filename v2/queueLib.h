@@ -13,7 +13,7 @@ typedef struct squeue{
     struct msg *msg_q[10];
     int count; 
     int head;
-    int tail;
+    unsigned int tail;
 } *squeuep;
  
 /* Structure of message */

@@ -15,7 +15,7 @@ int msg_forwarded_count = 0;
 int finished = 0;
 struct timespec accum_time[2000];
 
-sem_t mutex;
+static sem_t mutex;
 
 struct arg_struct_sender {
     int priority;
@@ -42,12 +42,13 @@ void *sender_thread(void* arg)
 {
 	struct arg_struct_sender *args = (struct arg_struct_sender *)arg;
 	struct timespec period = args->period;
+	struct squeue *bus_in_q = args->bus_in;
 	struct timespec next, st;
 	int i,j, num_msg, dest_id, msg_length, sender_id;
 	struct msg *add_msg;
 	
 	clock_gettime(CLOCK_MONOTONIC, &next);
-	while (msg_count < 2000)	// --->?? while(if(msg_count < 2000))
+	while (msg_count < 2000)	
 	{
 		sem_wait(&mutex);
 		//check msg_count
@@ -70,16 +71,16 @@ void *sender_thread(void* arg)
 				add_msg->msg_id = msg_count;
 				clock_gettime(CLOCK_MONOTONIC, &st);
 				add_msg->start_time = st;
-				if(sq_write(add_msg, args->bus_in) == -1)
+				if(sq_write(add_msg, bus_in_q) == -1)
 				{
 					msg_drop_count++;
 					free(add_msg);
 				}
 
 				//error checking
-				if(msg_count % 10 == 0)
+				//if(msg_count % 10 == 0)
 					printf("%d Messages Sent\n", msg_count);
-				if(msg_drop_count % 10 == 0)
+				//if(msg_drop_count % 10 == 0)
 					printf("%d Messages dropped\n", msg_drop_count);
 			}
 		}
@@ -94,21 +95,20 @@ void *receiver_thread(void* arg)
 {
 	struct arg_struct_receiver *args = (struct arg_struct_receiver *)arg;
 	struct timespec period = args->period;
+	struct squeue *bus_out = args->bus_out;
 	struct timespec next, et;
 	//arguments that need to be passed: period, priority, bus_out_ , 
 	int num_msg, dest_id, msg_length, sender_id,i;
-	struct msg *rem_msg, *q_msg;
-	struct squeue *bus_out;
+	struct msg *rem_msg;
 	long avg_time;
 	
 	clock_gettime(CLOCK_MONOTONIC, &next);
 	while(!finished)
 	{	
 		sem_wait(&mutex);
-		q_msg = sq_read(args->bus_out);
-		if(q_msg->msg_id != -1)
+		rem_msg = sq_read(bus_out);
+		if(rem_msg->msg_id != -1)
 		{
-			rem_msg = q_msg;
 			clock_gettime(CLOCK_MONOTONIC, &et);
 			accum_time[rem_msg->msg_id].tv_nsec = et.tv_nsec - rem_msg->start_time.tv_nsec;
 			free(rem_msg);
@@ -118,6 +118,7 @@ void *receiver_thread(void* arg)
 		}
 		else
 		{
+			free(rem_msg);
 			//queue is empty: check if 20k messages
 			if((msg_drop_count + msg_received_count) >= 2000)
 			{
@@ -149,6 +150,10 @@ void *bus_daemon(void* arg)
 	// set up semaphore (potentially thread_priority)
 	struct arg_struct_daemon *args = (struct arg_struct_daemon *)arg;
 	struct timespec period = args->period;
+	struct squeue *bus_in_q = args->bus_in;
+	struct squeue *bus_out_q1 = args->bus_out1;
+	struct squeue *bus_out_q2 = args->bus_out2;
+	struct squeue *bus_out_q3 = args->bus_out3;
 	struct timespec next;
 	struct msg *fwd_msg;
 	int dest_id;
@@ -162,20 +167,24 @@ void *bus_daemon(void* arg)
 		loop = 0;
 		while(loop != -1)
 		{
-			fwd_msg = sq_read(args->bus_in);
+			fwd_msg = sq_read(bus_in_q);
+			printf("error1\n");
 			loop = fwd_msg->msg_id;
 			if(fwd_msg->msg_id == -1)
-			{
+			{	
 				free(fwd_msg);
+				printf("error2\n");
 			}
 			else
 			{
 				//Forward messages to appropriate bus_out_q
+				printf("error4\n");
 				dest_id = fwd_msg->dest_id;
+				printf("error3\n");
 				switch (dest_id)
 				{
 					case 0:
-						if(sq_write(fwd_msg, args->bus_out1) == -1)
+						if(sq_write(fwd_msg, bus_out_q1) == -1)
 						{
 							msg_drop_count++;
 							free(fwd_msg);
@@ -184,7 +193,7 @@ void *bus_daemon(void* arg)
 							msg_forwarded_count++;
 						break;
 					case 1:
-						if(sq_write(fwd_msg, args->bus_out2) == -1)
+						if(sq_write(fwd_msg, bus_out_q2) == -1)
 						{
 							msg_drop_count++;
 							free(fwd_msg);
@@ -193,7 +202,7 @@ void *bus_daemon(void* arg)
 							msg_forwarded_count++;
 						break;
 					case 2:
-						if(sq_write(fwd_msg, args->bus_out3) == -1)
+						if(sq_write(fwd_msg, bus_out_q3) == -1)
 						{
 							msg_drop_count++;
 							free(fwd_msg);
@@ -243,6 +252,7 @@ int main( )
 	struct squeue *bus_out_q3 = sq_create();
 	
 	printf("queues created.\n");
+	printf("bus_in_q addr = %p\n", (void *)bus_in_q);
 
 	//create arg struct
 	for(i = 0; i < 8; i++)
@@ -295,6 +305,8 @@ int main( )
 		
 	}
 	printf("args created.\n");
+	printf("sender_q_in addr = %p\n", (void *)args_s[0].bus_in);
+	printf("daemon_q_in addr = %p\n", (void *)args_d.bus_in);
 	
 	//create pthreads
 	pthread_create(&sender1, NULL, &sender_thread, (void *)&args_s[0]);

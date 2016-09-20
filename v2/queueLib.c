@@ -16,7 +16,13 @@ File: queueLib.c
 struct squeue* sq_create()
 {
     struct squeue *cq = malloc(sizeof(struct squeue*));
-    cq->count = 0; 
+	int i;
+	for(i = 0; i < 10; i = i+1)
+	{
+		struct msg *q_msg;
+		cq->msg_q[i] = q_msg;
+	}
+	cq->count = 0; 
     cq->head = 0;
     cq->tail = 9;
     return cq;
@@ -25,9 +31,12 @@ struct squeue* sq_create()
 /* sq_write - to enqueuer a message. -1 is returned if the queue is full */
 int sq_write(struct msg *msg_addr, struct squeue *wq)
 {
-    if (wq->count < 10)
+    if(wq->count < 10)
     {
-        wq->tail = (wq->tail+1) % 10;
+        wq->tail++;
+	wq->tail = wq->tail%10;
+	printf("tail is %d\n",wq->tail);
+	printf("msg_id = %d\n", msg_addr->msg_id);
         wq->msg_q[wq->tail] = msg_addr;
         wq->count++;
     }
@@ -43,12 +52,15 @@ int sq_write(struct msg *msg_addr, struct squeue *wq)
 struct msg* sq_read(struct squeue *rq)
 {
     struct msg *ret;
+	printf("rq addr = %p\n",(void *)rq);
     if(rq->count > 0)
     {
         ret = (rq->msg_q[rq->head]);
-        rq->head = (rq->head +1) % 10;
-        rq->count--;
-	printf("reading from queue\n");
+	printf("ret->msg_id is %d. Head is %d\n",ret->msg_id, rq->head);
+        rq->head++;
+	 rq->head = rq->head % 10;
+        rq->count = rq->count - 1;
+	printf("reading from queue\n count is %d\n", rq->count);
     }
     else
     {

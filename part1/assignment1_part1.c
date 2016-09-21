@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include <math.h>
+//#include <math.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <time.h>
@@ -51,9 +51,9 @@ void *sender_thread(void* arg)
 	clock_gettime(CLOCK_MONOTONIC, &next);
 	while (!finished)	
 	{
+		sem_wait(&mutex);
 		if(msg_count < 2000)
 		{
-			sem_wait(&mutex);
 			//randomize number of messages to be made
 			num_msg = rand()%4;
 			num_msg++;
@@ -107,8 +107,8 @@ void *receiver_thread(void* arg)
 	struct timespec next, et;
 	int num_msg, dest_id, msg_length, sender_id, i, loop;
 	struct msg *rem_msg;
-	double avg_time, stdev, ac_time;
-	double var = 0;
+	unsigned long avg_time, stdev, ac_time;
+	unsigned long var = 0;
 	
 	clock_gettime(CLOCK_MONOTONIC, &next);
 	while(!finished)
@@ -142,20 +142,20 @@ void *receiver_thread(void* arg)
 					avg_time = avg_time / 2000; //divide by number of messages.
 					avg_time = avg_time / 1000; // convert to ms
 					//calculate stdev
-					for(i = 0; i<msg_received_count; i++)
+				/*	for(i = 0; i<msg_received_count; i++)
 					{
 						ac_time = accum_time[i].tv_nsec/1000;
 						var = var + pow((ac_time - avg_time),2);
 					}
 					var = var/msg_received_count;
-					stdev = sqrt(var);
+					stdev = sqrt(var);*/
 					printf("Program finished.\n");
 				//	printf("Total number of messages sent = %d.\n", msg_count);
 				//	printf("Total number of messages forwarded through daemon = %d\n", msg_forwarded_count);
 					//printf("Total number of messages received = %d\n", msg_received_count);
 					printf("Total number of messages dropped = %d.\n", msg_drop_count);
-					printf("Average time to complete message = %lfms.\n", avg_time);
-					printf("Standard deviation = %lf\n",stdev);
+					printf("Average time to complete message = %lums.\n", avg_time);
+				//	printf("Standard deviation = %lf\n",stdev);
 				}
 			}
 		}

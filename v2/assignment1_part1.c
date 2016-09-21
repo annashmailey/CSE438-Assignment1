@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <math.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <time.h>
@@ -8,12 +9,12 @@
 
 
 #define BASE_PERIOD 1000 //in ms
-int msg_count = 0;
+int msg_count = 0; //# of messages created
 int msg_drop_count = 0;
-int msg_received_count = 0; //received by receiver
-int msg_forwarded_count = 0; //forwarded through deamon
-int finished = 0; //used to end thread loops. Chaned to 0, when the final bus_out is cleared. 
-struct timespec accum_time[2000];
+int msg_received_count = 0; //# of messages received by receiver
+int msg_forwarded_count = 0; //# of messages forwarded through deamon
+int finished = 0; //used to end thread loops. Changed to 1, when the final bus_out is cleared. 
+struct timespec accum_time[2000];// accum time for each finished thread, used for avg and stdev
 
 static sem_t mutex;
 
@@ -106,7 +107,8 @@ void *receiver_thread(void* arg)
 	struct timespec next, et;
 	int num_msg, dest_id, msg_length, sender_id, i, loop;
 	struct msg *rem_msg;
-	long avg_time;
+	double avg_time, stdev, ac_time;
+	double var = 0;
 	
 	clock_gettime(CLOCK_MONOTONIC, &next);
 	while(!finished)
@@ -133,18 +135,27 @@ void *receiver_thread(void* arg)
 				if(finished == 0)
 				{
 					finished++;
-					for(i = 0; i < 2000; i++) //calculate sum of accum_time of all messages.
+					for(i = 0; i < msg_received_count; i++) //calculate sum of accum_time of all messages.
 					{
 						avg_time += accum_time[i].tv_nsec;
 					}
 					avg_time = avg_time / 2000; //divide by number of messages.
-					avg_time = avg_time /1000; //change to ms
+					avg_time = avg_time / 1000; // convert to ms
+					//calculate stdev
+					for(i = 0; i<msg_received_count; i++)
+					{
+						ac_time = accum_time[i].tv_nsec/1000;
+						var = var + pow((ac_time - avg_time),2);
+					}
+					var = var/msg_received_count;
+					stdev = sqrt(var);
 					printf("Program finished.\n");
-					printf("Total number of messages sent = %d.\n", msg_count);
-					printf("Total number of messages forwarded through daemon = %d\n", msg_forwarded_count);
-					printf("Total number of messages received = %d\n", msg_received_count);
+				//	printf("Total number of messages sent = %d.\n", msg_count);
+				//	printf("Total number of messages forwarded through daemon = %d\n", msg_forwarded_count);
+					//printf("Total number of messages received = %d\n", msg_received_count);
 					printf("Total number of messages dropped = %d.\n", msg_drop_count);
-					printf("Average time to complete message = %lums.\n", avg_time);
+					printf("Average time to complete message = %lfms.\n", avg_time);
+					printf("Standard deviation = %lf\n",stdev);
 				}
 			}
 		}

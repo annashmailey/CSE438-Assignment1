@@ -14,34 +14,30 @@ int msg_forwarded_count = 0; //# of messages forwarded through deamon
 int finished = 0; //used to end thread loops. Changed to 1, when the final bus_out is cleared. 
 struct timespec accum_time[2000];// accum time for each finished thread, used for avg and stdev
 
+int fd_in, fd_out1, fd_out2, fd_out3;
+
 static sem_t mutex;
 
 struct arg_struct_sender {
-    int priority;
+    	int priority;
 	struct timespec period;
-	struct squeue *bus_in;
 };
 
 struct arg_struct_receiver {
-    int priority;
+    	int priority;
 	struct timespec period;
-	struct squeue *bus_out;
+	int q_num; //specifies which output q to write to 1-3
 };
 
 struct arg_struct_daemon {
-    int priority;
+    	int priority;
 	struct timespec period;
-	struct squeue *bus_in;
-	struct squeue *bus_out1;
-	struct squeue *bus_out2;
-	struct squeue *bus_out3;
 };
 
 void *sender_thread(void* arg)
 {
 	struct arg_struct_sender *args = (struct arg_struct_sender *)arg;
 	struct timespec period = args->period;
-	struct squeue *bus_in_q = args->bus_in;
 	struct timespec next, st;
 	int i,j, num_msg, dest_id, msg_length, sender_id;
 	struct msg *add_msg;
@@ -77,17 +73,11 @@ void *sender_thread(void* arg)
 				clock_gettime(CLOCK_MONOTONIC, &st);
 				add_msg->start_time = st;
 				//write to queue
-				if(sq_write(add_msg, bus_in_q) == -1)
+				if(write(fd_in,(char*)add_msg, sizeof(struct msg)==-EINVAL)
 				{
 					msg_drop_count++;
-					free(add_msg);
 				}
-
-				/*error checking
-				if(msg_count % 100 == 0)
-					printf("%d Messages Sent\n", msg_count);
-				if(msg_drop_count % 100 == 0)
-					printf("%d Messages dropped\n", msg_drop_count);*/
+				free(add_msg);
 			}
 		}
 		next.tv_nsec = next.tv_nsec + period.tv_nsec;
@@ -101,10 +91,10 @@ void *receiver_thread(void* arg)
 {
 	struct arg_struct_receiver *args = (struct arg_struct_receiver *)arg;
 	struct timespec period = args->period;
-	struct squeue *bus_out = args->bus_out;
+	int q_num = args->q_num;
 	struct timespec next, et;
 	int num_msg, dest_id, msg_length, sender_id, i, loop;
-	struct msg *rem_msg;
+	struct msg rem_msg;
 	unsigned long avg_time, stdev, ac_time;
 	unsigned long var = 0;
 	
@@ -113,20 +103,22 @@ void *receiver_thread(void* arg)
 	{	
 		sem_wait(&mutex);
 		loop = 0;
-		while(loop!=-1)
+		while(loop!=-EINVAL)
 		{
-		rem_msg = sq_read(bus_out);
-		loop = rem_msg->msg_id;
-		if(rem_msg->msg_id != -1)
+		if(q_num == 1)
+			loop = read(fd_out1, (char*)&rem_msg, sizeof(struct msg));
+		if(q_num == 2)
+			loop = read(fd_out2, (char*)&rem_msg, sizeof(struct msg));
+		if(q_num == 3)
+			loop = read(fd_out3, (char*)&rem_msg, sizeof(struct msg));
+		if(loop != -EINVAL)
 		{
 			clock_gettime(CLOCK_MONOTONIC, &et);
 			accum_time[rem_msg->msg_id].tv_nsec = et.tv_nsec - rem_msg->start_time.tv_nsec;
-			free(rem_msg);
 			msg_received_count++;
 		}
 		else
 		{
-			free(rem_msg);
 			//queue is empty: check if 20k messages
 			if((msg_drop_count + msg_received_count) >= 2000)
 			{
@@ -169,12 +161,8 @@ void *bus_daemon(void* arg)
 {
 	struct arg_struct_daemon *args = (struct arg_struct_daemon *)arg;
 	struct timespec period = args->period;
-	struct squeue *bus_in_q = args->bus_in;
-	struct squeue *bus_out_q1 = args->bus_out1;
-	struct squeue *bus_out_q2 = args->bus_out2;
-	struct squeue *bus_out_q3 = args->bus_out3;
 	struct timespec next;
-	struct msg *fwd_msg;
+	struct msg fwd_msg;
 	int dest_id;
 	int loop;
 	
@@ -184,14 +172,9 @@ void *bus_daemon(void* arg)
 		sem_wait(&mutex);
 		//Remove messages from bus_in_q, loop receives output from sq_read, meaning it is -1 when the queue is empty.
 		loop = 0;
-		while(loop != -1)
+		while(loop != -EINVAL)
 		{
-			fwd_msg = sq_read(bus_in_q);
-			loop = fwd_msg->msg_id;
-			if(fwd_msg->msg_id == -1)
-			{	
-				free(fwd_msg);
-			}
+			loop = read(fd_in,(char*)&fwd_msg,sizeof(struct msg));
 			else
 			{
 				//Forward messages to appropriate bus_out_q
@@ -199,28 +182,25 @@ void *bus_daemon(void* arg)
 				switch (dest_id)
 				{
 					case 0:
-						if(sq_write(fwd_msg, bus_out_q1) == -1)
+						if(write(fd_out1,(char*)&fwd_msg,sizeof(struct msg)) == -EINVAL)
 						{
 							msg_drop_count++;
-							free(fwd_msg);
 						}
 						else
 							msg_forwarded_count++;
 						break;
 					case 1:
-						if(sq_write(fwd_msg, bus_out_q2) == -1)
+						if(write(fd_out2,(char*)&fwd_msg,sizeof(struct msg)) == -EINVAL)
 						{
 							msg_drop_count++;
-							free(fwd_msg);
 						}
 						else
 							msg_forwarded_count++;
 						break;
 					case 2:
-						if(sq_write(fwd_msg, bus_out_q3) == -1)
+						if(write(fd_out3,(char*)&fwd_msg,sizeof(struct msg)) == -EINVAL)
 						{
 							msg_drop_count++;
-							free(fwd_msg);
 						}
 						else
 							msg_forwarded_count++;
@@ -262,50 +242,49 @@ int main( )
 	pthread_t receiver3;
 	
 	sem_init(&mutex, 0, 1);
-	
-	struct squeue *bus_in_q = sq_create();
-	struct squeue *bus_out_q1 = sq_create();
-	struct squeue *bus_out_q2 = sq_create();
-	struct squeue *bus_out_q3 = sq_create();
-	
+
+	//open queue devices
+	fd_in = open("/dev/bus_in_q", O_WRONLY);
+	fd_out1 = open("/dev/bus_out_q1", O_WRONLY);
+	fd_out2 = open("/dev/bus_out_q2", O_WRONLY);
+	fd_out3 = open("/dev/bus_out_q3", O_WRONLY);
+	if(fd_in<0 ||fd_out1<0||fd_out2<0||fd_out3<0)
+	{
+		printf("Could not open devices.\n");
+		return -1;
+	}
 
 	//create arg struct
 	for(i = 0; i < 8; i++)
 	{
-		//printf("Error, i = %d\n", i);
 		switch(i)
 		{
 			case 0 ... 3: 
 			//sender arguments
 				args_s[i].period.tv_nsec = period_multiplier[i] * BASE_PERIOD * 1000;
 				args_s[i].priority = thread_priority[i];
-				args_s[i].bus_in = bus_in_q;
 				break;
 		
 			case 4:
 			//daemon arguments
 				args_d.period.tv_nsec = period_multiplier[i] * BASE_PERIOD * 1000;
 				args_d.priority = thread_priority[i];
-				args_d.bus_in = bus_in_q;
-				args_d.bus_out1 = bus_out_q1;
-				args_d.bus_out2 = bus_out_q2;
-				args_d.bus_out3 = bus_out_q3;
 				break;
 			//receiver arguments	
 			case 5:
 				args_r[i-5].period.tv_nsec = period_multiplier[i] * BASE_PERIOD * 1000;
 				args_r[i-5].priority = thread_priority[i];
-				args_r[i-5].bus_out = bus_out_q1;
+				args_r[i-5].q_num = 1;
 				break;
 			case 6:
 				args_r[i-5].period.tv_nsec = period_multiplier[i] * BASE_PERIOD * 1000;
 				args_r[i-5].priority = thread_priority[i];
-				args_r[i-5].bus_out = bus_out_q2;
+				args_r[i-5].q_num = 2;
 				break;
 			case 7:
 				args_r[i-5].period.tv_nsec = period_multiplier[i] * BASE_PERIOD * 1000;
 				args_r[i-5].priority = thread_priority[i];
-				args_r[i-5].bus_out = bus_out_q3;
+				args_r[i-5].q_num = 3;
 				break;
 			 //receiever arguments
 			default:
@@ -333,6 +312,10 @@ int main( )
 	pthread_join(receiver1, NULL);
 	pthread_join(receiver2, NULL);
 	pthread_join(receiver3, NULL);
-	return 0;
 	sem_destroy(&mutex);
+	close(fd_in);
+	close(fd_out1);
+	close(fd_out2);
+	close(fd_out3);
+	return 0;
 }

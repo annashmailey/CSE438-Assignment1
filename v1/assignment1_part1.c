@@ -12,7 +12,7 @@ int msg_count = 0;
 int msg_drop_count = 0;
 int msg_received_count = 0; //received by receiver
 int msg_forwarded_count = 0; //forwarded through deamon
-int finished = 0; //used to end thread loops. Chaned to 0, when the final bus_out is cleared. 
+int finished = 0; //number of cleared bus_out_q's. End of program when it is 3
 struct timespec accum_time[2000];
 
 static sem_t mutex;
@@ -56,11 +56,11 @@ void *sender_thread(void* arg)
 			//randomize number of messages to be made
 			num_msg = rand()%4;
 			num_msg++;
-			if(num_msg + msg_count > 2000)
-				num_msg = 2000-msg_count;
 			printf("num_msg = %d\n",num_msg);
 			for(i = 0; i < num_msg; i++)
 			{
+				printf("test\n");
+				printf("test1\n");
 				//create message
 				dest_id = rand() % 3; //randomize dest_id
 				msg_length = rand() % 70;

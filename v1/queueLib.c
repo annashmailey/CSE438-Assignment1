@@ -56,7 +56,7 @@ struct msg* sq_read(struct squeue *rq)
 	rq->msg_q[rq->head] = NULL;
         rq->head = (rq->head+1) % 10;
         rq->count = rq->count - 1;
-	printf("reading from queue\ncount is %d\n", rq->count);
+	printf("reading from queue\n count is %d\n", rq->count);
     }
     else
     {

@@ -1,10 +1,19 @@
 #include <stdio.h>
-//#include <math.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <time.h>
 #include <semaphore.h>
 #include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+
+struct msg {
+    int msg_id;      // global sequence number of message
+    int source_id;  
+    int dest_id;
+    struct timespec start_time; 
+    char msg_string[80];  // arbitrary character message with uniformly distributed length of 10 to 80  
+} *msgp;
 
 #define BASE_PERIOD 1000 //in ms
 int msg_count = 0; //# of messages created
@@ -73,7 +82,7 @@ void *sender_thread(void* arg)
 				clock_gettime(CLOCK_MONOTONIC, &st);
 				add_msg->start_time = st;
 				//write to queue
-				if(write(fd_in,(char*)add_msg, sizeof(struct msg)==-EINVAL)
+				if(write(fd_in,(char*)add_msg, sizeof(struct msg))==-1)
 				{
 					msg_drop_count++;
 				}
@@ -103,7 +112,7 @@ void *receiver_thread(void* arg)
 	{	
 		sem_wait(&mutex);
 		loop = 0;
-		while(loop!=-EINVAL)
+		while(loop!=-1)
 		{
 		if(q_num == 1)
 			loop = read(fd_out1, (char*)&rem_msg, sizeof(struct msg));
@@ -111,10 +120,10 @@ void *receiver_thread(void* arg)
 			loop = read(fd_out2, (char*)&rem_msg, sizeof(struct msg));
 		if(q_num == 3)
 			loop = read(fd_out3, (char*)&rem_msg, sizeof(struct msg));
-		if(loop != -EINVAL)
+		if(loop != -1)
 		{
 			clock_gettime(CLOCK_MONOTONIC, &et);
-			accum_time[rem_msg->msg_id].tv_nsec = et.tv_nsec - rem_msg->start_time.tv_nsec;
+			accum_time[rem_msg.msg_id].tv_nsec = et.tv_nsec - rem_msg.start_time.tv_nsec;
 			msg_received_count++;
 		}
 		else
@@ -172,53 +181,46 @@ void *bus_daemon(void* arg)
 		sem_wait(&mutex);
 		//Remove messages from bus_in_q, loop receives output from sq_read, meaning it is -1 when the queue is empty.
 		loop = 0;
-		while(loop != -EINVAL)
+		while(loop != -1)
 		{
 			loop = read(fd_in,(char*)&fwd_msg,sizeof(struct msg));
-			else
+			//Forward messages to appropriate bus_out_q
+			dest_id = fwd_msg.dest_id;
+			switch (dest_id)
 			{
-				//Forward messages to appropriate bus_out_q
-				dest_id = fwd_msg->dest_id;
-				switch (dest_id)
-				{
-					case 0:
-						if(write(fd_out1,(char*)&fwd_msg,sizeof(struct msg)) == -EINVAL)
-						{
-							msg_drop_count++;
-						}
-						else
-							msg_forwarded_count++;
-						break;
-					case 1:
-						if(write(fd_out2,(char*)&fwd_msg,sizeof(struct msg)) == -EINVAL)
-						{
-							msg_drop_count++;
-						}
-						else
-							msg_forwarded_count++;
-						break;
-					case 2:
-						if(write(fd_out3,(char*)&fwd_msg,sizeof(struct msg)) == -EINVAL)
-						{
-							msg_drop_count++;
-						}
-						else
-							msg_forwarded_count++;
-						break;
-					default:
-						printf("could not find dest_id");
-						break;
-				}
+				case 0:
+					if(write(fd_out1,(char*)&fwd_msg,sizeof(struct msg)) == -1)
+					{
+						msg_drop_count++;
+					}
+					else
+						msg_forwarded_count++;
+					break;
+				case 1:
+					if(write(fd_out2,(char*)&fwd_msg,sizeof(struct msg)) == -1)
+					{
+						msg_drop_count++;
+					}
+					else
+						msg_forwarded_count++;
+					break;
+				case 2:
+					if(write(fd_out3,(char*)&fwd_msg,sizeof(struct msg)) == -1)
+					{
+						msg_drop_count++;
+					}
+					else
+						msg_forwarded_count++;
+					break;
+				default:
+					printf("could not find dest_id");
+					break;
 			}
 		}
 		next.tv_nsec = next.tv_nsec + period.tv_nsec;
 		clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next, 0);
 		sem_post(&mutex);
 	}
-	sq_delete(bus_in_q);
-	sq_delete(bus_out_q1);
-	sq_delete(bus_out_q2);
-	sq_delete(bus_out_q3);
 	pthread_exit(0);
 }
 
@@ -248,7 +250,8 @@ int main( )
 	fd_out1 = open("/dev/bus_out_q1", O_WRONLY);
 	fd_out2 = open("/dev/bus_out_q2", O_WRONLY);
 	fd_out3 = open("/dev/bus_out_q3", O_WRONLY);
-	if(fd_in<0 ||fd_out1<0||fd_out2<0||fd_out3<0)
+	//printf("%d\n%d\n%d\n%d\n",fd_in,fd_out1,fd_out2,fd_out3);
+	if( (fd_in<0) || (fd_out1<0) || (fd_out2<0) || (fd_out3<0))
 	{
 		printf("Could not open devices.\n");
 		return -1;

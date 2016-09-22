@@ -26,7 +26,7 @@ File:  sharedQueue.c
 #define BUS_OUT_3		"bus_out_q3"
 
 static dev_t device_number[4];      /* Allotted device number */
-static char device_name[4][10] = {BUS_IN, BUS_OUT_1, BUS_OUT_2, BUS_OUT_3};
+static char device_name[4][20] = {BUS_IN, BUS_OUT_1, BUS_OUT_2, BUS_OUT_3};
 static struct class *device_class[4];
 static struct bus_dev* bus_devp[4];
 static struct device *bus_device[4];
@@ -92,7 +92,7 @@ ssize_t bus_driver_write(struct file *file, const char *buf, size_t count, loff_
 		ret = copy_from_user((char*)new_msg, buf, sizeof(struct msg));
 		
 		if (ret < 0)
-			return -EINVAL;
+			return EINVAL;
 
 		bus_devp->msg_q[bus_devp->head] = new_msg;  // or bus_devp->tail
 		bus_devp->tail++;  // or head?
@@ -100,7 +100,7 @@ ssize_t bus_driver_write(struct file *file, const char *buf, size_t count, loff_
 		bus_devp->count++;
 	}
 	else // if((bus_devp->count) >= 10)
-		return -EINVAL; 	//ret = -1;
+		return EINVAL; 	//ret = -1;
 
 	return ret;  // OR    return sizeof(struct msg);
 }
@@ -122,7 +122,7 @@ ssize_t bus_driver_read(struct file *file, char *buf, size_t count, loff_t *ppos
 		//check if empty
 		if(ret < 0)
 		{
-			return -EINVAL;
+			return EINVAL;
 		}
 
 		kfree(bus_devp->msg_q[bus_devp->head]); // or msg_q[bus_devp->tail]

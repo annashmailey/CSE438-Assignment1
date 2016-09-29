@@ -82,7 +82,7 @@ void *sender_thread(void* arg)
 				clock_gettime(CLOCK_MONOTONIC, &st);
 				add_msg->start_time = st;
 				//write to queue
-				if(write(fd_in,(char*)add_msg, sizeof(struct msg))==-1)
+				if(write(fd_in,(char*)add_msg, sizeof(struct msg))<0)
 				{
 					msg_drop_count++;
 				}
@@ -112,7 +112,7 @@ void *receiver_thread(void* arg)
 	{	
 		sem_wait(&mutex);
 		loop = 0;
-		while(loop!=-1)
+		while(loop >= 0)
 		{
 		if(q_num == 1)
 			loop = read(fd_out1, (char*)&rem_msg, sizeof(struct msg));
@@ -120,7 +120,7 @@ void *receiver_thread(void* arg)
 			loop = read(fd_out2, (char*)&rem_msg, sizeof(struct msg));
 		if(q_num == 3)
 			loop = read(fd_out3, (char*)&rem_msg, sizeof(struct msg));
-		if(loop != -1)
+		if(loop >= 0)
 		{
 			clock_gettime(CLOCK_MONOTONIC, &et);
 			accum_time[rem_msg.msg_id].tv_nsec = et.tv_nsec - rem_msg.start_time.tv_nsec;
@@ -181,7 +181,7 @@ void *bus_daemon(void* arg)
 		sem_wait(&mutex);
 		//Remove messages from bus_in_q, loop receives output from sq_read, meaning it is -1 when the queue is empty.
 		loop = 0;
-		while(loop != -1)
+		while(loop >= 0)
 		{
 			loop = read(fd_in,(char*)&fwd_msg,sizeof(struct msg));
 			//Forward messages to appropriate bus_out_q
@@ -189,7 +189,7 @@ void *bus_daemon(void* arg)
 			switch (dest_id)
 			{
 				case 0:
-					if(write(fd_out1,(char*)&fwd_msg,sizeof(struct msg)) == -1)
+					if(write(fd_out1,(char*)&fwd_msg,sizeof(struct msg)) < 0)
 					{
 						msg_drop_count++;
 					}
@@ -197,7 +197,7 @@ void *bus_daemon(void* arg)
 						msg_forwarded_count++;
 					break;
 				case 1:
-					if(write(fd_out2,(char*)&fwd_msg,sizeof(struct msg)) == -1)
+					if(write(fd_out2,(char*)&fwd_msg,sizeof(struct msg)) < 0)
 					{
 						msg_drop_count++;
 					}
@@ -205,7 +205,7 @@ void *bus_daemon(void* arg)
 						msg_forwarded_count++;
 					break;
 				case 2:
-					if(write(fd_out3,(char*)&fwd_msg,sizeof(struct msg)) == -1)
+					if(write(fd_out3,(char*)&fwd_msg,sizeof(struct msg)) < 0)
 					{
 						msg_drop_count++;
 					}

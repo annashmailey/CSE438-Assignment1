@@ -79,7 +79,7 @@ int bus_driver_release(struct inode *inode, struct file *file)
 ssize_t bus_driver_write(struct file *file, const char *buf, size_t count, loff_t *ppos)
 {
 	/* Enqueue a message to the device. If the queue is full, -1 is returned
-		and errno is set to EINVAL.                                */
+		and errno is set to.                                */
 	int ret = 0;
 	struct bus_dev *bus_devp = file->private_data;
 
@@ -92,15 +92,15 @@ ssize_t bus_driver_write(struct file *file, const char *buf, size_t count, loff_
 		ret = copy_from_user((char*)new_msg, buf, sizeof(struct msg));
 		
 		if (ret < 0)
-			return EINVAL;
+			return -EINVAL;
 
-		bus_devp->msg_q[bus_devp->head] = new_msg;  // or bus_devp->tail
 		bus_devp->tail++;  // or head?
 		bus_devp->tail = (bus_devp->tail) % 10;  // or head?
 		bus_devp->count++;
+		bus_devp->msg_q[bus_devp->tail] = new_msg;
 	}
 	else // if((bus_devp->count) >= 10)
-		return EINVAL; 	//ret = -1;
+		return -EINVAL; 	//ret = -1;
 
 	return ret;  // OR    return sizeof(struct msg);
 }
@@ -117,12 +117,12 @@ ssize_t bus_driver_read(struct file *file, char *buf, size_t count, loff_t *ppos
 	// Remove from queue
 	if(bus_devp->count > 0)
 	{
-		ret = copy_to_user(buf, (char*)bus_devp->msg_q[bus_devp->tail], sizeof(struct msg));
+		ret = copy_to_user(buf, (char*)bus_devp->msg_q[bus_devp->head], sizeof(struct msg));
 		
 		//check if empty
 		if(ret < 0)
 		{
-			return EINVAL;
+			return -EINVAL;
 		}
 
 		kfree(bus_devp->msg_q[bus_devp->head]); // or msg_q[bus_devp->tail]
@@ -190,7 +190,7 @@ int __init bus_driver_init(void)
 		strcpy(bus_devp[i]->name, device_name[i]);
 		bus_devp[i]->count = 0;
 		bus_devp[i]->head = 0;
-		bus_devp[i]->tail = 0;
+		bus_devp[i]->tail = 9;
 
 
 	} // end of for loop (for 4 devices)
